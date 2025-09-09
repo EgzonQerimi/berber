@@ -1,0 +1,116 @@
+/* ------- Firebase config (your config inserted) ------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyD78phtXVTog8HoPX3FoQn-qRDa-v-pOfE",
+  authDomain: "berber1-project.firebaseapp.com",
+  databaseURL:
+    "https://berber1-project-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "berber1-project",
+  storageBucket: "berber1-project.firebasestorage.app",
+  messagingSenderId: "340106750132",
+  appId: "1:340106750132:web:7a972df6ac53a568d00fe1",
+  measurementId: "G-ZV7PCW0FV3",
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+/* ---------------------------------------------------- */
+
+const apptsEl = document.getElementById("appointments");
+const resetAllBtn = document.getElementById("resetAll");
+const notifyEl = document.getElementById("notification");
+
+function notify(msg) {
+  notifyEl.textContent = msg;
+  notifyEl.className = "show";
+  setTimeout(() => (notifyEl.className = ""), 3200);
+}
+
+function isPastDate(dateStr) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr);
+  d.setHours(0, 0, 0, 0);
+  return d < today;
+}
+
+function render(data) {
+  apptsEl.innerHTML = "";
+  if (!data || Object.keys(data).length === 0) {
+    apptsEl.innerHTML = '<div class="empty">No appointments yet.</div>';
+    return;
+  }
+
+  // remove past dates automatically
+  for (const date of Object.keys(data)) {
+    if (isPastDate(date)) {
+      db.ref(`appointments/${date}`).remove();
+      delete data[date];
+    }
+  }
+
+  const sortedDates = Object.keys(data).sort(
+    (a, b) => new Date(a) - new Date(b)
+  );
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  sortedDates.forEach((date) => {
+    const block = document.createElement("div");
+    block.className = "date-block";
+
+    const header = document.createElement("div");
+    header.className = "date-header";
+    const title = document.createElement("h2");
+    title.textContent = date === todayStr ? `Today (${date})` : date;
+    header.appendChild(title);
+    block.appendChild(header);
+
+    // Build a list of [userId, appt] then sort by hour
+    const entries = Object.entries(data[date] || {});
+    entries.sort((a, b) => a[1].hour - b[1].hour);
+
+    const table = document.createElement("table");
+    table.className = "appt-table";
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    headerRow.innerHTML = "<th>Hour</th><th>Client</th><th>Action</th>";
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    entries.forEach(([userId, appt]) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td style="width:110px">${String(appt.hour).padStart(
+        2,
+        "0"
+      )}:00</td><td>${
+        appt.name
+      }</td><td style="width:120px"><button class="deleteBtn">Delete</button></td>`;
+      const btn = tr.querySelector(".deleteBtn");
+      btn.addEventListener("click", async () => {
+        await db.ref(`appointments/${date}/${userId}`).remove();
+        notify(`Deleted ${appt.hour}:00 — ${appt.name} on ${date}`);
+      });
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    block.appendChild(table);
+    apptsEl.appendChild(block);
+  });
+}
+
+// realtime listener
+db.ref("appointments").on("value", (snapshot) => {
+  if (snapshot.exists()) {
+    render(snapshot.val());
+  } else {
+    render(null);
+  }
+});
+
+// Reset all
+resetAllBtn.addEventListener("click", async () => {
+  if (confirm("Reset all appointments? This cannot be undone.")) {
+    await db.ref("appointments").remove();
+    notify("All appointments cleared.");
+  }
+});

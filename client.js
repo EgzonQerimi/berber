@@ -1,0 +1,165 @@
+const firebaseConfig = {
+  apiKey: "AIzaSyD78phtXVTog8HoPX3FoQn-qRDa-v-pOfE",
+  authDomain: "berber1-project.firebaseapp.com",
+  databaseURL:
+    "https://berber1-project-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "berber1-project",
+  storageBucket: "berber1-project.firebaseapp.com",
+  messagingSenderId: "340106750132",
+  appId: "1:340106750132:web:7a972df6ac53a568d00fe1",
+  measurementId: "G-ZV7PCW0FV3",
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const datePicker = document.getElementById("datePicker");
+const hoursDiv = document.getElementById("hours");
+const nameBox = document.getElementById("nameBox");
+const clientName = document.getElementById("clientName");
+const confirmBtn = document.getElementById("confirmBtn");
+const notification = document.getElementById("notification");
+
+let selectedDate = "";
+let selectedHour = "";
+let deviceId = localStorage.getItem("deviceId") || Date.now().toString();
+localStorage.setItem("deviceId", deviceId);
+
+function showNotification(msg) {
+  notification.textContent = msg;
+  notification.classList.add("show");
+  setTimeout(() => notification.classList.remove("show"), 4000);
+}
+
+// Set default date to today
+const today = new Date().toISOString().split("T")[0];
+datePicker.value = today;
+datePicker.min = today;
+selectedDate = today;
+
+// Render hours immediately for today
+renderForDate(today);
+
+// When date is changed manually
+datePicker.addEventListener("change", async () => {
+  selectedDate = datePicker.value;
+  renderForDate(selectedDate);
+});
+
+async function cleanupAppointments(date) {
+  const now = new Date();
+
+  // Remove whole past date
+  const todayObj = new Date();
+  todayObj.setHours(0, 0, 0, 0);
+  const pickedDate = new Date(date);
+  pickedDate.setHours(0, 0, 0, 0);
+
+  if (pickedDate < todayObj) {
+    await db.ref("appointments/" + date).remove();
+    return null;
+  }
+
+  // If today: remove past hours
+  if (date === now.toISOString().split("T")[0]) {
+    const snapshot = await db.ref("appointments/" + date).get();
+    if (snapshot.exists()) {
+      snapshot.forEach((child) => {
+        const appt = child.val();
+        if (appt.hour <= now.getHours()) {
+          db.ref(`appointments/${date}/${child.key}`).remove();
+        }
+      });
+    }
+  }
+}
+
+async function renderForDate(date) {
+  hoursDiv.innerHTML = "";
+  selectedHour = "";
+  nameBox.style.display = "none";
+
+  if (!date) return;
+
+  // Run cleanup before rendering
+  await cleanupAppointments(date);
+
+  const snapshot = await db.ref("appointments/" + date).get();
+  const booked = {};
+  let myAppt = null;
+
+  if (snapshot.exists()) {
+    snapshot.forEach((child) => {
+      const appt = child.val();
+      booked[appt.hour] = appt;
+      if (appt.userId === deviceId) myAppt = appt;
+    });
+  }
+
+  if (myAppt) {
+    showNotification(
+      `You already booked an appointment for ${myAppt.hour}:00. Select another time if you want to change it `
+    );
+  }
+
+  // Render hours 8..19
+  for (let i = 8; i <= 19; i++) {
+    const btn = document.createElement("button");
+    btn.className = "hour-btn";
+    btn.textContent = `${i}:00`;
+
+    // Block past hours if today
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (date === todayStr) {
+      const now = new Date();
+      if (i <= now.getHours()) {
+        btn.disabled = true;
+        btn.title = "Past hour";
+      }
+    }
+
+    if (booked[i]) {
+      if (booked[i].userId === deviceId) {
+        btn.classList.add("my-booking");
+      } else {
+        btn.disabled = true;
+      }
+    } else if (!btn.disabled) {
+      btn.addEventListener("click", () => {
+        document
+          .querySelectorAll(".hour-btn")
+          .forEach((x) => x.classList.remove("selected"));
+        btn.classList.add("selected");
+        selectedHour = i;
+        nameBox.style.display = "flex";
+      });
+    }
+
+    hoursDiv.appendChild(btn);
+  }
+}
+
+// Confirm booking
+confirmBtn.addEventListener("click", async () => {
+  const name = clientName.value.trim();
+  if (!name || !selectedDate || !selectedHour) {
+    showNotification("Please select a date, hour and enter your name.");
+    return;
+  }
+
+  // Overwrite or create appointment
+  await db.ref(`appointments/${selectedDate}/${deviceId}`).set({
+    hour: selectedHour,
+    name: name,
+    userId: deviceId,
+    timestamp: Date.now(),
+  });
+
+  showNotification(
+    `Appointment confirmed for ${selectedDate} at ${selectedHour}:00`
+  );
+  clientName.value = "";
+  nameBox.style.display = "none";
+
+  renderForDate(selectedDate);
+});
