@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Barber Dashboard</title>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <link rel="stylesheet" href="barber.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Scheduled Appointments</h1>
+      <div id="appointments"></div>
+      <button id="resetAll">Reset All</button>
+      <div id="notification"></div>
+    </div>
+
+    <script>
+      // ✅ Firebase config
+      const firebaseConfig = {
+        apiKey: "AIzaSyD78phtXVTog8HoPX3FoQn-qRDa-v-pOfE",
+        authDomain: "berber1-project.firebaseapp.com",
+        databaseURL:
+          "https://berber1-project-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "berber1-project",
+        storageBucket: "berber1-project.firebasestorage.app",
+        messagingSenderId: "340106750132",
+        appId: "1:340106750132:web:7a972df6ac53a568d00fe1",
+        measurementId: "G-ZV7PCW0FV3",
+      };
+
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.database();
+
+      const appointmentsDiv = document.getElementById("appointments");
+      const resetAllBtn = document.getElementById("resetAll");
+      const notification = document.getElementById("notification");
+
+      function showNotification(msg) {
+        notification.textContent = msg;
+        notification.classList.add("show");
+        setTimeout(() => notification.classList.remove("show"), 4000);
+      }
+
+      // Render appointments
+      function renderAppointments(data) {
+        appointmentsDiv.innerHTML = "";
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Remove past dates automatically
+        for (let date in data) {
+          const d = new Date(date);
+          if (d < today) {
+            db.ref("appointments/" + date).remove();
+            continue;
+          }
+        }
+
+        // Sort dates
+        const sortedDates = Object.keys(data).sort(
+          (a, b) => new Date(a) - new Date(b)
+        );
+
+        sortedDates.forEach((date) => {
+          const appts = data[date];
+          const dateBlock = document.createElement("div");
+          dateBlock.className = "date-block";
+
+          const dateObj = new Date(date);
+          let titleText = date;
+
+          if (dateObj.getTime() === today.getTime()) {
+            titleText = `Today (${date})`;
+          }
+
+          const dateTitle = document.createElement("h2");
+          dateTitle.textContent = titleText;
+          dateBlock.appendChild(dateTitle);
+
+          // Table for appointments
+          const table = document.createElement("table");
+          table.className = "appt-table";
+
+          const header = document.createElement("tr");
+          header.innerHTML = `
+        <th>Hour</th>
+        <th>Client</th>
+        <th>Action</th>
+      `;
+          table.appendChild(header);
+
+          // Sort hours
+          const sortedHours = Object.values(appts).sort(
+            (a, b) => a.hour - b.hour
+          );
+
+          sortedHours.forEach((appt) => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+          <td>${appt.hour}:00</td>
+          <td>${appt.name}</td>
+          <td><button class="deleteBtn">Delete</button></td>
+        `;
+
+            const deleteBtn = row.querySelector(".deleteBtn");
+            deleteBtn.addEventListener("click", () => {
+              db.ref(`appointments/${date}`)
+                .orderByChild("hour")
+                .equalTo(appt.hour)
+                .once("value", (snapshot) => {
+                  snapshot.forEach((child) => child.ref.remove());
+                });
+              showNotification(
+                `Deleted appointment at ${appt.hour}:00 on ${date}`
+              );
+            });
+
+            table.appendChild(row);
+          });
+
+          dateBlock.appendChild(table);
+          appointmentsDiv.appendChild(dateBlock);
+        });
+      }
+
+      // Listen for realtime updates
+      db.ref("appointments").on("value", (snapshot) => {
+        if (snapshot.exists()) {
+          renderAppointments(snapshot.val());
+        } else {
+          appointmentsDiv.innerHTML = "<p>No appointments yet.</p>";
+        }
+      });
+
+      // Reset all
+      resetAllBtn.addEventListener("click", () => {
+        db.ref("appointments").remove();
+        showNotification("All appointments have been reset.");
+      });
+    </script>
+  </body>
+</html>
