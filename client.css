@@ -1,132 +1,165 @@
-/* Simple professional styling (you can keep your client.css if you prefer) */
-:root {
-  --bg1: #74b9ff;
-  --bg2: #a29bfe;
-  --card: #ffffff;
-  --accent: #0984e3;
-  --success: #00b894;
-  --danger: #d63031;
-  --muted: #718093;
-}
+/* Global */
 body {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #f9f9f9, #e0e0f7);
   margin: 0;
-  font-family: "Segoe UI", Roboto, sans-serif;
-  background: linear-gradient(135deg, var(--bg1), var(--bg2));
-  display: flex;
-  justify-content: center;
-  padding: 40px 16px;
+  padding: 0;
 }
-.card {
-  width: 100%;
-  max-width: 640px;
-  background: var(--card);
-  border-radius: 14px;
-  padding: 26px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
-}
-h1 {
-  margin: 0 0 14px;
-  color: #2d3436;
+
+.container {
+  max-width: 500px;
+  margin: 50px auto;
+  background: white;
+  padding: 30px;
+  border-radius: 15px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
   text-align: center;
 }
-.row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-top: 12px;
+
+h1 {
+  color: #333;
+  margin-bottom: 20px;
 }
+
+/* Date picker */
 input[type="date"] {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid #e6e9ef;
-  font-size: 15px;
-  width: 100%;
-}
-#hours {
-  margin-top: 18px;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-}
-.hour-btn {
   padding: 10px;
-  border-radius: 10px;
-  border: 1px solid #e6e9ef;
-  background: #f5f6fa;
-  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 16px;
+  margin-bottom: 20px;
+}
+
+/* Hour buttons */
+#hours {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.hour-btn {
+  padding: 10px 15px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #6a11cb, #2575fc);
+  color: white;
   cursor: pointer;
-  transition: all 0.15s;
+  font-weight: bold;
+  transition: all 0.3s ease;
 }
-.hour-btn:hover {
-  transform: translateY(-3px);
+
+.hour-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 }
+
 .hour-btn:disabled {
-  background: var(--danger);
-  color: white;
+  background: #ccc;
   cursor: not-allowed;
-  transform: none;
-  opacity: 0.95;
 }
-.my-booking {
-  background: #fdcb6e;
-  font-weight: 700;
+
+.hour-btn.selected {
+  background: #ff6b6b;
 }
-.selected {
-  background: var(--success);
-  color: white;
+
+/* My booking */
+.hour-btn.my-booking {
+  background: #f9a825;
 }
+
+/* Name box */
 #nameBox {
   display: flex;
+  justify-content: center;
   gap: 10px;
-  margin-top: 16px;
-  align-items: center;
+  margin-bottom: 20px;
 }
+
 #clientName {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid #e6e9ef;
-  width: 65%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  flex: 1;
 }
+
 #confirmBtn {
-  padding: 10px 16px;
-  border-radius: 10px;
+  padding: 10px 15px;
   border: none;
-  background: var(--accent);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #00b09b, #96c93d);
   color: white;
-  font-weight: 700;
   cursor: pointer;
+  font-weight: bold;
+  transition: all 0.3s ease;
 }
-#notify {
+
+#confirmBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* Notifications */
+#notification {
   position: fixed;
   top: 20px;
   right: 20px;
-  min-width: 220px;
-  padding: 12px 14px;
-  border-radius: 10px;
+  background: linear-gradient(135deg, #ff4b2b, #ff416c);
   color: white;
-  transform: translateY(-10px);
+  padding: 15px 25px;
+  border-radius: 10px;
+  font-weight: bold;
   opacity: 0;
-  pointer-events: none;
-  transition: all 0.3s;
+  transform: translateY(-20px);
+  transition: all 0.4s ease;
   z-index: 1000;
 }
-#notify.show {
-  transform: translateY(0);
+
+#notification.show {
   opacity: 1;
-  pointer-events: auto;
+  transform: translateY(0);
 }
-.info {
-  background: #f1c40f;
-  color: #2d3436;
+
+/* ===== Date Picker Container ===== */
+.date-container {
+  margin-bottom: 25px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 300px;
 }
-.success {
-  background: var(--success);
+
+.date-container label {
+  font-weight: 600;
+  color: #333;
+  font-size: 16px;
 }
-.error {
-  background: var(--danger);
+
+/* ===== Date Input Styling ===== */
+#date {
+  padding: 12px 16px;
+  border: 2px solid #ccc;
+  border-radius: 12px;
+  font-size: 16px;
+  transition: all 0.3s ease;
+  background: #f9f9f9;
+  cursor: pointer;
 }
-.hint {
-  color: var(--muted);
-  margin-top: 10px;
-  font-size: 13px;
+
+#date:focus {
+  outline: none;
+  border-color: #6a11cb;
+  box-shadow: 0 0 10px rgba(106, 17, 203, 0.3);
+  background: #fff;
+}
+
+#date::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(50%) sepia(60%) saturate(400%) hue-rotate(200deg);
+  transition: 0.3s;
+}
+
+#date::-webkit-calendar-picker-indicator:hover {
+  filter: invert(30%) sepia(70%) saturate(600%) hue-rotate(200deg);
 }

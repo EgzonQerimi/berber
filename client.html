@@ -10,7 +10,8 @@
   </head>
   <body>
     <div class="container">
-      <h1>Book Your Appointment</h1>
+      <h1>Book your Termin</h1>
+      <h2>Select the date please</h2>
       <input type="date" id="datePicker" />
       <div id="hours"></div>
       <div id="nameBox" style="display: none">
@@ -21,14 +22,13 @@
     </div>
 
     <script>
-      // ✅ Firebase config
       const firebaseConfig = {
         apiKey: "AIzaSyD78phtXVTog8HoPX3FoQn-qRDa-v-pOfE",
         authDomain: "berber1-project.firebaseapp.com",
         databaseURL:
           "https://berber1-project-default-rtdb.europe-west1.firebasedatabase.app",
         projectId: "berber1-project",
-        storageBucket: "berber1-project.firebasestorage.app",
+        storageBucket: "berber1-project.firebaseapp.com",
         messagingSenderId: "340106750132",
         appId: "1:340106750132:web:7a972df6ac53a568d00fe1",
         measurementId: "G-ZV7PCW0FV3",
@@ -55,52 +55,74 @@
         setTimeout(() => notification.classList.remove("show"), 4000);
       }
 
-      // When date is selected
+      // Set default date to today
+      const today = new Date().toISOString().split("T")[0];
+      datePicker.value = today;
+      datePicker.min = today;
+      selectedDate = today;
+
+      // Render hours immediately for today
+      renderForDate(today);
+
+      // When date is changed manually
       datePicker.addEventListener("change", async () => {
         selectedDate = datePicker.value;
-        hoursDiv.innerHTML = "";
-        nameBox.style.display = "none";
-        selectedHour = "";
-
-        if (!selectedDate) return;
-
-        // Prevent booking past dates
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const pickedDate = new Date(selectedDate);
-
-        if (pickedDate < today) {
-          showNotification("You cannot select a past date");
-          return;
-        }
-
         renderForDate(selectedDate);
       });
+
+      async function cleanupAppointments(date) {
+        const now = new Date();
+
+        // Remove whole past date
+        const todayObj = new Date();
+        todayObj.setHours(0, 0, 0, 0);
+        const pickedDate = new Date(date);
+        pickedDate.setHours(0, 0, 0, 0);
+
+        if (pickedDate < todayObj) {
+          await db.ref("appointments/" + date).remove();
+          return null;
+        }
+
+        // If today: remove past hours
+        if (date === now.toISOString().split("T")[0]) {
+          const snapshot = await db.ref("appointments/" + date).get();
+          if (snapshot.exists()) {
+            snapshot.forEach((child) => {
+              const appt = child.val();
+              if (appt.hour <= now.getHours()) {
+                db.ref(`appointments/${date}/${child.key}`).remove();
+              }
+            });
+          }
+        }
+      }
 
       async function renderForDate(date) {
         hoursDiv.innerHTML = "";
         selectedHour = "";
         nameBox.style.display = "none";
 
+        if (!date) return;
+
+        // Run cleanup before rendering
+        await cleanupAppointments(date);
+
         const snapshot = await db.ref("appointments/" + date).get();
         const booked = {};
+        let myAppt = null;
+
         if (snapshot.exists()) {
           snapshot.forEach((child) => {
-            booked[child.val().hour] = child.val();
+            const appt = child.val();
+            booked[appt.hour] = appt;
+            if (appt.userId === deviceId) myAppt = appt;
           });
         }
 
-        // Check if this device already has a booking for this date
-        let myAppt = null;
-        snapshot.forEach((child) => {
-          if (child.val().userId === deviceId) {
-            myAppt = child.val();
-          }
-        });
-
         if (myAppt) {
           showNotification(
-            `You already booked at ${myAppt.hour}:00. You can change it.`
+            `You already booked an appointment for today at ${myAppt.hour}:00. You can change it for another time if free.`
           );
         }
 
