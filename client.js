@@ -98,7 +98,7 @@ async function renderForDate(date) {
 
   if (myAppt) {
     showNotification(
-      `You already booked an appointment for ${myAppt.hour}:00. Select another time if you want to change it `
+      `Hello ${myAppt.name} you already booked an appointment for ${myAppt.hour}:00. Select another time if you want to change it `
     );
   }
 
