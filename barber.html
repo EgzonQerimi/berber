@@ -1,23 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Barber Dashboard</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Barber — Dashboard</title>
+
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
     <link rel="stylesheet" href="barber.css" />
   </head>
   <body>
-    <div class="container">
+    <div class="wrap">
       <h1>Scheduled Appointments</h1>
       <div id="appointments"></div>
       <button id="resetAll">Reset All</button>
-      <div id="notification"></div>
     </div>
 
+    <div id="notification"></div>
+
     <script>
-      // ✅ Firebase config
+      /* ------- Firebase config (your config inserted) ------- */
       const firebaseConfig = {
         apiKey: "AIzaSyD78phtXVTog8HoPX3FoQn-qRDa-v-pOfE",
         authDomain: "berber1-project.firebaseapp.com",
@@ -29,116 +32,108 @@
         appId: "1:340106750132:web:7a972df6ac53a568d00fe1",
         measurementId: "G-ZV7PCW0FV3",
       };
-
       firebase.initializeApp(firebaseConfig);
       const db = firebase.database();
+      /* ---------------------------------------------------- */
 
-      const appointmentsDiv = document.getElementById("appointments");
+      const apptsEl = document.getElementById("appointments");
       const resetAllBtn = document.getElementById("resetAll");
-      const notification = document.getElementById("notification");
+      const notifyEl = document.getElementById("notification");
 
-      function showNotification(msg) {
-        notification.textContent = msg;
-        notification.classList.add("show");
-        setTimeout(() => notification.classList.remove("show"), 4000);
+      function notify(msg) {
+        notifyEl.textContent = msg;
+        notifyEl.className = "show";
+        setTimeout(() => (notifyEl.className = ""), 3200);
       }
 
-      // Render appointments
-      function renderAppointments(data) {
-        appointmentsDiv.innerHTML = "";
-
+      function isPastDate(dateStr) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
+        const d = new Date(dateStr);
+        d.setHours(0, 0, 0, 0);
+        return d < today;
+      }
 
-        // Remove past dates automatically
-        for (let date in data) {
-          const d = new Date(date);
-          if (d < today) {
-            db.ref("appointments/" + date).remove();
-            continue;
+      function render(data) {
+        apptsEl.innerHTML = "";
+        if (!data || Object.keys(data).length === 0) {
+          apptsEl.innerHTML = '<div class="empty">No appointments yet.</div>';
+          return;
+        }
+
+        // remove past dates automatically
+        for (const date of Object.keys(data)) {
+          if (isPastDate(date)) {
+            db.ref(`appointments/${date}`).remove();
+            delete data[date];
           }
         }
 
-        // Sort dates
         const sortedDates = Object.keys(data).sort(
           (a, b) => new Date(a) - new Date(b)
         );
+        const todayStr = new Date().toISOString().split("T")[0];
 
         sortedDates.forEach((date) => {
-          const appts = data[date];
-          const dateBlock = document.createElement("div");
-          dateBlock.className = "date-block";
+          const block = document.createElement("div");
+          block.className = "date-block";
 
-          const dateObj = new Date(date);
-          let titleText = date;
+          const header = document.createElement("div");
+          header.className = "date-header";
+          const title = document.createElement("h2");
+          title.textContent = date === todayStr ? `Today (${date})` : date;
+          header.appendChild(title);
+          block.appendChild(header);
 
-          if (dateObj.getTime() === today.getTime()) {
-            titleText = `Today (${date})`;
-          }
+          // Build a list of [userId, appt] then sort by hour
+          const entries = Object.entries(data[date] || {});
+          entries.sort((a, b) => a[1].hour - b[1].hour);
 
-          const dateTitle = document.createElement("h2");
-          dateTitle.textContent = titleText;
-          dateBlock.appendChild(dateTitle);
-
-          // Table for appointments
           const table = document.createElement("table");
           table.className = "appt-table";
+          const thead = document.createElement("thead");
+          const headerRow = document.createElement("tr");
+          headerRow.innerHTML = "<th>Hour</th><th>Client</th><th>Action</th>";
+          thead.appendChild(headerRow);
+          table.appendChild(thead);
 
-          const header = document.createElement("tr");
-          header.innerHTML = `
-        <th>Hour</th>
-        <th>Client</th>
-        <th>Action</th>
-      `;
-          table.appendChild(header);
-
-          // Sort hours
-          const sortedHours = Object.values(appts).sort(
-            (a, b) => a.hour - b.hour
-          );
-
-          sortedHours.forEach((appt) => {
-            const row = document.createElement("tr");
-            row.innerHTML = `
-          <td>${appt.hour}:00</td>
-          <td>${appt.name}</td>
-          <td><button class="deleteBtn">Delete</button></td>
-        `;
-
-            const deleteBtn = row.querySelector(".deleteBtn");
-            deleteBtn.addEventListener("click", () => {
-              db.ref(`appointments/${date}`)
-                .orderByChild("hour")
-                .equalTo(appt.hour)
-                .once("value", (snapshot) => {
-                  snapshot.forEach((child) => child.ref.remove());
-                });
-              showNotification(
-                `Deleted appointment at ${appt.hour}:00 on ${date}`
-              );
+          const tbody = document.createElement("tbody");
+          entries.forEach(([userId, appt]) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td style="width:110px">${String(
+              appt.hour
+            ).padStart(2, "0")}:00</td><td>${
+              appt.name
+            }</td><td style="width:120px"><button class="deleteBtn">Delete</button></td>`;
+            const btn = tr.querySelector(".deleteBtn");
+            btn.addEventListener("click", async () => {
+              await db.ref(`appointments/${date}/${userId}`).remove();
+              notify(`Deleted ${appt.hour}:00 — ${appt.name} on ${date}`);
             });
-
-            table.appendChild(row);
+            tbody.appendChild(tr);
           });
 
-          dateBlock.appendChild(table);
-          appointmentsDiv.appendChild(dateBlock);
+          table.appendChild(tbody);
+          block.appendChild(table);
+          apptsEl.appendChild(block);
         });
       }
 
-      // Listen for realtime updates
+      // realtime listener
       db.ref("appointments").on("value", (snapshot) => {
         if (snapshot.exists()) {
-          renderAppointments(snapshot.val());
+          render(snapshot.val());
         } else {
-          appointmentsDiv.innerHTML = "<p>No appointments yet.</p>";
+          render(null);
         }
       });
 
       // Reset all
-      resetAllBtn.addEventListener("click", () => {
-        db.ref("appointments").remove();
-        showNotification("All appointments have been reset.");
+      resetAllBtn.addEventListener("click", async () => {
+        if (confirm("Reset all appointments? This cannot be undone.")) {
+          await db.ref("appointments").remove();
+          notify("All appointments cleared.");
+        }
       });
     </script>
   </body>

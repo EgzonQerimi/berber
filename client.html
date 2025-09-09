@@ -1,27 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Barbershop Client</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Barbershop — Client</title>
+
+    <!-- Firebase compat -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <link rel="stylesheet" href="client.css" />
   </head>
   <body>
-    <div class="container">
+    <div class="card">
       <h1>Book Your Appointment</h1>
-      <input type="date" id="datePicker" />
+
+      <label for="datePicker" style="font-weight: 600">Select date</label>
+      <div class="row">
+        <input id="datePicker" type="date" />
+      </div>
+
       <div id="hours"></div>
+
       <div id="nameBox" style="display: none">
-        <input type="text" id="clientName" placeholder="Your Name" />
+        <input id="clientName" type="text" placeholder="Your name" />
         <button id="confirmBtn">Confirm</button>
       </div>
-      <div id="notification"></div>
+
+      <div class="hint">
+        Hours available: 08:00 — 19:00. You can only have one appointment per
+        date. To change it, select another free slot to reschedule.
+      </div>
     </div>
 
+    <div id="notify"></div>
+
     <script>
-      // ✅ Your Firebase config
+      /* --------- Firebase config (your config inserted) --------- */
       const firebaseConfig = {
         apiKey: "AIzaSyD78phtXVTog8HoPX3FoQn-qRDa-v-pOfE",
         authDomain: "berber1-project.firebaseapp.com",
@@ -33,110 +47,227 @@
         appId: "1:340106750132:web:7a972df6ac53a568d00fe1",
         measurementId: "G-ZV7PCW0FV3",
       };
-
       firebase.initializeApp(firebaseConfig);
       const db = firebase.database();
+      /* --------------------------------------------------------- */
 
       const datePicker = document.getElementById("datePicker");
       const hoursDiv = document.getElementById("hours");
       const nameBox = document.getElementById("nameBox");
       const clientName = document.getElementById("clientName");
       const confirmBtn = document.getElementById("confirmBtn");
-      const notification = document.getElementById("notification");
+      const notifyEl = document.getElementById("notify");
 
       let selectedDate = "";
-      let selectedHour = "";
-      let userId = localStorage.getItem("userId") || Date.now().toString();
-      localStorage.setItem("userId", userId);
+      let selectedHour = null;
+      let deviceId = getDeviceId();
+      let currentDateRef = null; // to remove listener if needed
+      let myBookingHour = null; // track existing booking hour for this device on selectedDate
 
-      function showNotification(msg) {
-        notification.textContent = msg;
-        notification.classList.add("show");
-        setTimeout(() => notification.classList.remove("show"), 4000);
+      function getDeviceId() {
+        let id = localStorage.getItem("deviceId");
+        if (!id) {
+          id = "dev-" + Math.random().toString(36).slice(2, 11);
+          localStorage.setItem("deviceId", id);
+        }
+        return id;
       }
 
-      // When a date is selected
-      datePicker.addEventListener("change", async () => {
-        selectedDate = datePicker.value;
+      function toast(msg, type = "info") {
+        notifyEl.textContent = msg;
+        notifyEl.className = type + " show";
+        setTimeout(() => {
+          notifyEl.className = "";
+        }, 3800);
+      }
+
+      async function cleanupDuplicateDeviceEntries(dateSnapshot) {
+        // If older/broken code created multiple entries for the same device on the same date,
+        // keep the newest and remove others.
+        if (!dateSnapshot.exists()) return;
+        const entries = [];
+        dateSnapshot.forEach((child) => {
+          const val = child.val();
+          if (val && val.userId === deviceId)
+            entries.push({ key: child.key, val: val });
+        });
+        if (entries.length <= 1) return;
+        // keep the latest by timestamp
+        entries.sort((a, b) => (b.val.timestamp || 0) - (a.val.timestamp || 0));
+        const keep = entries[0].key;
+        for (let i = 1; i < entries.length; i++) {
+          await db
+            .ref(`appointments/${selectedDate}/${entries[i].key}`)
+            .remove();
+        }
+      }
+
+      function detachCurrentListener() {
+        if (currentDateRef) {
+          currentDateRef.off("value");
+          currentDateRef = null;
+        }
+      }
+
+      async function renderForDate(date) {
+        // Remove previous realtime listener
+        detachCurrentListener();
+
+        selectedDate = date;
         hoursDiv.innerHTML = "";
         nameBox.style.display = "none";
-        selectedHour = "";
+        selectedHour = null;
+        myBookingHour = null;
 
-        if (!selectedDate) return;
+        if (!date) return;
 
-        // Compare as Date objects
+        // check date validity (not past)
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const pickedDate = new Date(selectedDate);
-
-        if (pickedDate < today) {
-          showNotification("You cannot select a past date");
+        const picked = new Date(date);
+        picked.setHours(0, 0, 0, 0);
+        if (picked < today) {
+          toast("You cannot select a past date", "error");
           return;
         }
 
-        // Load existing appointments
-        const snapshot = await db.ref("appointments/" + selectedDate).get();
-        const booked = {};
-        if (snapshot.exists()) {
+        // get snapshot and also subscribe for realtime updates for that date
+        currentDateRef = db.ref(`appointments/${date}`);
+        const initial = await currentDateRef.get();
+
+        // cleanup duplicates for this device if any
+        await cleanupDuplicateDeviceEntries(initial);
+
+        // now set realtime listener to update UI whenever the date's bookings change
+        currentDateRef.on("value", (snapshot) => {
+          hoursDiv.innerHTML = "";
+          const booked = {}; // keyed by hour -> {name, userId}
           snapshot.forEach((child) => {
-            booked[child.val().hour] = child.val();
+            const val = child.val();
+            if (val && typeof val.hour !== "undefined")
+              booked[val.hour] = { ...val, _key: child.key };
           });
-        }
 
-        // Check if this user already booked today
-        const userSnapshot = await db
-          .ref("appointments/" + selectedDate + "/" + userId)
-          .get();
-        if (userSnapshot.exists()) {
-          const myAppt = userSnapshot.val();
-          showNotification(
-            `You already booked at ${myAppt.hour}:00. You can change it.`
+          // detect if this device already has an appointment for this date
+          const myEntry = Object.entries(booked).find(
+            ([hour, info]) => info.userId === deviceId
           );
-        }
-
-        // Render hours
-        for (let i = 8; i <= 19; i++) {
-          const btn = document.createElement("button");
-          btn.textContent = `${i}:00`;
-          btn.className = "hour-btn";
-
-          if (booked[i]) {
-            btn.disabled = true;
+          if (myEntry) {
+            myBookingHour = parseInt(myEntry[0], 10);
+            clientName.value = myEntry[1].name || "";
+            toast(
+              `You already have an appointment at ${myBookingHour}:00 on ${date}. Choose another free slot to reschedule.`,
+              "info"
+            );
+          } else {
+            myBookingHour = null;
           }
 
-          btn.addEventListener("click", () => {
-            selectedHour = i;
-            nameBox.style.display = "block";
-          });
+          // Render hours 8..19
+          for (let i = 8; i <= 19; i++) {
+            const btn = document.createElement("button");
+            btn.className = "hour-btn";
+            btn.textContent = `${i}:00`;
 
-          hoursDiv.appendChild(btn);
-        }
+            if (booked[i]) {
+              // if booked by this device
+              if (booked[i].userId === deviceId) {
+                btn.classList.add("my-booking");
+              } else {
+                btn.disabled = true;
+              }
+            } else {
+              btn.addEventListener("click", () => {
+                // mark selection visually
+                document
+                  .querySelectorAll(".hour-btn")
+                  .forEach((x) => x.classList.remove("selected"));
+                btn.classList.add("selected");
+                selectedHour = i;
+                nameBox.style.display = "flex";
+              });
+            }
+
+            hoursDiv.appendChild(btn);
+          }
+        });
+      }
+
+      // on date change
+      datePicker.addEventListener("change", (e) => {
+        renderForDate(e.target.value);
       });
 
-      // Confirm booking
       confirmBtn.addEventListener("click", async () => {
         const name = clientName.value.trim();
-        if (!name || !selectedDate || !selectedHour) {
-          showNotification("Please select a date, hour and enter your name.");
+        if (!selectedDate) {
+          toast("Please select a date first.", "error");
+          return;
+        }
+        if (!name) {
+          toast("Please enter your name.", "error");
+          return;
+        }
+        if (!selectedHour && !myBookingHour) {
+          // if user already had booking, they could click 'confirm' without selecting a different hour.
+          toast(
+            "Please select an hour to confirm or change your existing booking.",
+            "error"
+          );
           return;
         }
 
-        // Save appointment
-        await db.ref(`appointments/${selectedDate}/${userId}`).set({
+        // If user intends to keep their current booking hour and hasn't chosen another, do nothing
+        if (myBookingHour && selectedHour === null) {
+          toast(
+            `You already booked at ${myBookingHour}:00. To change it choose another slot.`,
+            "info"
+          );
+          return;
+        }
+
+        // final check: ensure selectedHour is still free (not taken by someone else)
+        const dateRef = db.ref(`appointments/${selectedDate}`);
+        const snapshot = await dateRef.get();
+
+        // If someone else booked the slot (and not our device) -> block
+        let conflict = false;
+        snapshot.forEach((child) => {
+          const val = child.val();
+          if (val && val.hour === selectedHour && val.userId !== deviceId) {
+            conflict = true;
+          }
+        });
+        if (conflict) {
+          toast(
+            "That slot was just taken by someone else. Please choose another hour.",
+            "error"
+          );
+          // re-render will occur via realtime listener, but let's refresh the view:
+          renderForDate(selectedDate);
+          return;
+        }
+
+        // Save (this writes to appointments/{date}/{deviceId} ensuring only ONE booking per device per date)
+        await db.ref(`appointments/${selectedDate}/${deviceId}`).set({
           hour: selectedHour,
           name: name,
+          userId: deviceId,
           timestamp: Date.now(),
         });
 
-        showNotification(
-          `Appointment confirmed for ${selectedDate} at ${selectedHour}:00`
-        );
-        clientName.value = "";
-        nameBox.style.display = "none";
+        toast(`Booked ${selectedDate} at ${selectedHour}:00`, "success");
 
-        // Refresh hours so it disables booked slot
-        datePicker.dispatchEvent(new Event("change"));
+        // reset selection UI (realtime listener will update UI)
+        selectedHour = null;
+        nameBox.style.display = "none";
+        // no need to call renderForDate; listener already will reflect change
       });
+
+      /* If user reloads while a date is selected, we won't have any date; but if you want to prefill today, uncomment:
+datePicker.value = new Date().toISOString().split('T')[0];
+renderForDate(datePicker.value);
+*/
     </script>
   </body>
 </html>
